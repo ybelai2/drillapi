@@ -27,27 +27,55 @@ public class GeminiService {
 
     public String generateQuestions(String slideText) throws Exception {
         String prompt = """
-            You are a computer science professor creating exam practice questions.
-            From the following lecture slide text, write 8 multiple-choice questions.
-            Each question must have exactly 4 options, exactly one correct answer,
-            and a one-sentence explanation of why the answer is correct.
-            Cover the most important, testable concepts. Do not invent facts not in the slides.
+            You are a computer science professor creating study material from lecture slides.
+            From the SLIDE TEXT below, return JSON with two parts:
+
+            1. "flashcards": 8-10 key term/definition pairs. "front" = the term or concept,
+               "back" = a concise 1-2 sentence definition.
+
+            2. "questions": 10-12 quiz questions mixing THREE types, roughly evenly:
+               - type "mc"  : multiple choice. Put exactly 4 entries in "options",
+                              set "answerIndex" to the correct option (0-3), set "answerText" to "".
+               - type "tf"  : true/false. Set "options" to ["True","False"], set "answerIndex"
+                              to 0 if the statement is true or 1 if false, set "answerText" to "".
+               - type "fill": fill in the blank. Write "question" with the blank shown as _____ ,
+                              put the missing word or short phrase in "answerText",
+                              set "options" to [] and "answerIndex" to -1.
+
+            Give every question a one-sentence "explanation".
+            Use ONLY facts present in the slides. Do not invent content.
 
             SLIDE TEXT:
             """ + slideText;
 
+        Map<String, Object> str = Map.of("type", "STRING");
+
+        Map<String, Object> flashItem = Map.of(
+            "type", "OBJECT",
+            "properties", Map.of("front", str, "back", str),
+            "required", List.of("front", "back")
+        );
+
+        Map<String, Object> qItem = Map.of(
+            "type", "OBJECT",
+            "properties", Map.of(
+                "type", str,
+                "question", str,
+                "options", Map.of("type", "ARRAY", "items", str),
+                "answerIndex", Map.of("type", "INTEGER"),
+                "answerText", str,
+                "explanation", str
+            ),
+            "required", List.of("type", "question", "options", "answerIndex", "answerText", "explanation")
+        );
+
         Map<String, Object> schema = Map.of(
-            "type", "ARRAY",
-            "items", Map.of(
-                "type", "OBJECT",
-                "properties", Map.of(
-                    "question", Map.of("type", "STRING"),
-                    "options", Map.of("type", "ARRAY", "items", Map.of("type", "STRING")),
-                    "answerIndex", Map.of("type", "INTEGER"),
-                    "explanation", Map.of("type", "STRING")
-                ),
-                "required", List.of("question", "options", "answerIndex", "explanation")
-            )
+            "type", "OBJECT",
+            "properties", Map.of(
+                "flashcards", Map.of("type", "ARRAY", "items", flashItem),
+                "questions", Map.of("type", "ARRAY", "items", qItem)
+            ),
+            "required", List.of("flashcards", "questions")
         );
 
         Map<String, Object> body = Map.of(
