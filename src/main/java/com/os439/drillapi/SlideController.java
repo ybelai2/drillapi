@@ -20,15 +20,26 @@ public class SlideController {
         this.gemini = gemini;
     }
 
+    // Accepts one OR many files. A single upload still works (1-element array),
+    // so the old single-file curl and the old frontend remain compatible.
     @PostMapping("/api/extract")
-    public List<String> extract(@RequestParam("file") MultipartFile file) throws Exception {
-        return extractSlides(file);
+    public List<String> extract(@RequestParam("file") MultipartFile[] files) throws Exception {
+        List<String> all = new ArrayList<>();
+        for (MultipartFile f : files) {
+            all.addAll(extractSlides(f));
+        }
+        return all;
     }
 
     @PostMapping("/api/generate")
-    public String generate(@RequestParam("file") MultipartFile file) throws Exception {
-        String text = String.join("\n", extractSlides(file));
-        return gemini.generateQuestions(text);
+    public String generate(@RequestParam("file") MultipartFile[] files) throws Exception {
+        StringBuilder combined = new StringBuilder();
+        for (MultipartFile f : files) {
+            String name = (f.getOriginalFilename() == null) ? "deck" : f.getOriginalFilename();
+            combined.append("\n########## DECK: ").append(name).append(" ##########\n");
+            combined.append(String.join("\n", extractSlides(f)));
+        }
+        return gemini.generateQuestions(combined.toString());
     }
 
     private List<String> extractSlides(MultipartFile file) throws Exception {
