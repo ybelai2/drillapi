@@ -27,23 +27,33 @@ public class GeminiService {
 
     public String generateQuestions(String slideText) throws Exception {
         String prompt = """
-            You are a computer science professor creating study material from lecture slides.
-            From the SLIDE TEXT below, return JSON with two parts:
+            You are a computer science professor building a COMPLETE study package from lecture slides.
+            From the SLIDE TEXT below, return JSON with two parts: "flashcards" and "questions".
 
-            1. "flashcards": 8-10 key term/definition pairs. "front" = the term or concept,
-               "back" = a concise 1-2 sentence definition.
+            FLASHCARDS:
+            - Extract EVERY important concept, definition, process, algorithm, acronym, formula,
+              architecture component, and key fact in the slides.
+            - "front" = an active-recall prompt (prefer "How does X differ from Y?" or
+              "Why does X happen?" over "What is X?"). "back" = a concise, correct answer.
+            - Do NOT cap the count. Scale to the material: a small deck may need 15-25 cards,
+              a large or combined deck may need 40-100+. Aim for thorough coverage, not a fixed number.
 
-            2. "questions": 10-12 quiz questions mixing THREE types, roughly evenly:
-               - type "mc"  : multiple choice. Put exactly 4 entries in "options",
-                              set "answerIndex" to the correct option (0-3), set "answerText" to "".
-               - type "tf"  : true/false. Set "options" to ["True","False"], set "answerIndex"
-                              to 0 if the statement is true or 1 if false, set "answerText" to "".
-               - type "fill": fill in the blank. Write "question" with the blank shown as _____ ,
-                              put the missing word or short phrase in "answerText",
-                              set "options" to [] and "answerIndex" to -1.
+            QUESTIONS:
+            - Generate enough to test mastery of ALL the material (minimum 25; for large or
+              combined decks, 40-75). Scale to the volume of slide content provided.
+            - Mix three types in roughly 40% mc / 30% tf / 30% fill proportion.
+            - Include definition, conceptual, application, and comparison questions.
+            - type "mc"  : multiple choice. Exactly 4 entries in "options",
+                           "answerIndex" = correct option (0-3), "answerText" = "".
+            - type "tf"  : true/false. "options" = ["True","False"],
+                           "answerIndex" = 0 if true or 1 if false, "answerText" = "".
+            - type "fill": fill in the blank. "question" contains the blank as _____ ,
+                           "answerText" = the missing word/phrase, "options" = [], "answerIndex" = -1.
 
             Give every question a one-sentence "explanation".
-            Use ONLY facts present in the slides. Do not invent content.
+            Use ONLY facts present in the slides. Do not invent content beyond the slides.
+            When the slides contain multiple decks (marked with "########## DECK ... "),
+            cover every deck proportionally.
 
             SLIDE TEXT:
             """ + slideText;
@@ -82,7 +92,10 @@ public class GeminiService {
             "contents", List.of(Map.of("parts", List.of(Map.of("text", prompt)))),
             "generationConfig", Map.of(
                 "responseMimeType", "application/json",
-                "responseSchema", schema
+                "responseSchema", schema,
+                // Big study sets produce big JSON. Without a high cap the response is
+                // truncated mid-array and JSON parsing fails. 65536 is the model max.
+                "maxOutputTokens", 65536
             )
         );
 
@@ -93,7 +106,8 @@ public class GeminiService {
             .uri(URI.create(url))
             .header("x-goog-api-key", apiKey)
             .header("Content-Type", "application/json")
-            .timeout(Duration.ofSeconds(60))
+            // Larger generations take longer; 60s was too tight for big multi-deck sets.
+            .timeout(Duration.ofSeconds(180))
             .POST(HttpRequest.BodyPublishers.ofString(mapper.writeValueAsString(body)))
             .build();
 
