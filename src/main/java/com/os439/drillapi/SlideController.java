@@ -21,13 +21,21 @@ public class SlideController {
     }
 
     @PostMapping("/api/extract")
-    public List<String> extract(@RequestParam("file") MultipartFile file) throws Exception {
-        return extractSlides(file);
+    public List<String> extract(@RequestParam("files") MultipartFile[] files) throws Exception {
+        List<String> allSlides = new ArrayList<>();
+        for (MultipartFile file : files) {
+            allSlides.addAll(extractSlides(file));
+        }
+        return allSlides;
     }
 
     @PostMapping("/api/generate")
-    public String generate(@RequestParam("file") MultipartFile file) throws Exception {
-        String text = String.join("\n", extractSlides(file));
+    public String generate(@RequestParam("files") MultipartFile[] files) throws Exception {
+        List<String> allSlides = new ArrayList<>();
+        for (MultipartFile file : files) {
+            allSlides.addAll(extractSlides(file));
+        }
+        String text = String.join("\n", allSlides);
         return gemini.generateQuestions(text);
     }
 
