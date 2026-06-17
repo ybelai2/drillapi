@@ -54,3 +54,10 @@ public class SlideController {
                         }
                     }
                 }
+                slides.add(sb.toString());
+                n++;
+            }
+        }
+        return slides;
+    }
+}
