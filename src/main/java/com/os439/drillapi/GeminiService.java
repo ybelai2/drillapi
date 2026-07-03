@@ -38,30 +38,76 @@ public class GeminiService {
         }
 
         String prompt = """
-            You are a computer science professor building a COMPLETE study package from lecture slides.
+            You are building a study package for a cumulative Operating Systems final
+            (COSC 439, Chapters 1-14). The exam rewards two very different skills, so you
+            must generate two distinct kinds of content instead of generic definitional recall.
 
-            From the SLIDE TEXT below, return JSON with two parts:
-            "flashcards" and "questions".
+            From the SLIDE TEXT below, return JSON with two parts: "flashcards" and "questions".
 
-            FLASHCARDS:
-            - Extract EVERY important concept, definition, process,
-              algorithm, acronym, formula, architecture component,
-              and key fact.
+            ============================================================
+            FLASHCARDS
+            ============================================================
+            - Extract EVERY important concept, definition, process, algorithm, acronym,
+              formula, architecture component, and key fact.
             - "front" = active recall question
             - "back" = concise answer
-            - Do NOT cap the number of cards.
-            - Generate enough cards to thoroughly cover all content.
+            - Do NOT cap the number of cards. Generate enough to thoroughly cover all content.
 
-            QUESTIONS:
+            ============================================================
+            QUESTIONS - TWO CATEGORIES REQUIRED
+            ============================================================
+            Every question object must be tagged with a "category" field: either
+            "concept" or "calculation". Do not blur the two.
+
+            --- CONCEPT questions ---
+            These test mechanism and trade-off, not just definitions. A good concept
+            question forces the student to explain WHAT the OS does, WHY it does it that
+            way, and WHAT the cost/trade-off is (performance, security, complexity).
+            Prioritize contrast pairs explicitly named in the course material, e.g.:
+            process vs thread, kernel vs shell, logical vs physical address, blocking vs
+            asynchronous I/O, protection vs security, mutex vs semaphore, ACL vs capability
+            list, symmetric vs asymmetric encryption.
+            Weight concept questions toward FINAL-WEEK material (Ch 12 I/O Systems,
+            Ch 13 Protection, Ch 14 Security) since it is the least-drilled material:
+            least privilege, access matrices, ACLs, capability lists, revocation,
+            common attacks (masquerading, replay, man-in-the-middle, session hijacking,
+            buffer overflow, worms, port scans, DoS), authentication, hashes, MACs,
+            digital signatures, certificates, firewalls, defense in depth.
+            At least 40%% of concept questions must come from Ch 12-14.
+
+            --- CALCULATION questions ---
+            These must be genuine numeric/worked problems, not vocabulary. Generate
+            calculation questions covering these exact categories whenever the slide
+            content supports it:
+              - CPU scheduling Gantt charts (FCFS, SJF, SRTF, Priority, Round Robin) —
+                give a specific process/burst-time table and ask for waiting time,
+                turnaround time, or completion order.
+              - Address translation: physical address = logical address + relocation/MMU value.
+              - Demand paging effective access time, given memory access time and
+                page-fault rate.
+              - Page replacement fault counts (FIFO, LRU, second-chance) given a
+                reference string.
+              - Disk scheduling total head movement (FCFS, SSTF, SCAN, C-SCAN, LOOK, C-LOOK)
+                given a starting head position and request queue.
+              - Disk I/O average access time = seek time + rotational latency + transfer
+                time + controller overhead.
+              - Unix/Linux permission conversion: octal value to owner/group/others rwx.
+            For calculation questions, the "explanation" field must show the actual
+            worked steps (the numbers plugged in, not just the final answer), so a
+            student who gets it wrong can see exactly where their math diverged.
+
+            ============================================================
+            FORMAT RULES
+            ============================================================
             - Generate enough questions to test mastery of all material.
-            - Minimum 25 questions.
-            - For large slide decks generate 40-75 questions.
-            - Mix:
+            - Minimum 25 questions. For large slide decks generate 40-75 questions.
+            - Across ALL questions, mix format types:
                 40%% Multiple Choice
                 30%% True/False
                 30%% Fill In Blank
-
-            Rules:
+            - Calculation questions should mostly be Multiple Choice or Fill In Blank
+              (a specific numeric answer) rather than True/False, since True/False
+              can't meaningfully test whether the math was done correctly.
 
             MC:
             - Exactly 4 options
@@ -77,9 +123,11 @@ public class GeminiService {
             - question contains _____
             - options = []
             - answerIndex = -1
-            - answerText = missing phrase
+            - answerText = missing phrase or computed number
 
-            Include a one-sentence explanation for every question.
+            Include an explanation for every question. For concept questions this is
+            the mechanism/why/cost reasoning. For calculation questions this is the
+            worked-out steps.
 
             Use ONLY information contained in the slides.
 
@@ -108,6 +156,7 @@ public class GeminiService {
                 "type", "OBJECT",
                 "properties", Map.of(
                         "type", str,
+                        "category", str,
                         "question", str,
                         "options", Map.of(
                                 "type", "ARRAY",
@@ -121,6 +170,7 @@ public class GeminiService {
                 ),
                 "required", List.of(
                         "type",
+                        "category",
                         "question",
                         "options",
                         "answerIndex",
