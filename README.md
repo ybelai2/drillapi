@@ -2,7 +2,7 @@
 
 Drill is a full-stack web application that transforms PowerPoint lecture slides into interactive study materials (flashcards, multiple-choice questions) using AI. Built to explore practical multi-file processing workflows and API integration with large language models.
 
-**Live demo:** [drillapi.onrender.com](https://drillapi.onrender.com) (backend) | [Frontend on Vercel](https://your-frontend-url-here.vercel.app)
+**Live demo:** [drillapi.onrender.com](https://drillapi.onrender.com) (backend) | [Frontend on Vercel](https://study-cs.vercel.app/))
 
 ---
 
