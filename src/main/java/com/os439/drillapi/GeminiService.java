@@ -28,7 +28,17 @@ public class GeminiService {
             .connectTimeout(Duration.ofSeconds(30))
             .build();
 
-    public String generateQuestions(String slideText) throws Exception {
+    /**
+     * Generates study materials (flashcards and questions) for any course slides.
+     *
+     * @param slideText     the content from course slides
+     * @param courseContext optional course description (e.g., "Introduction to Biology",
+     *                      "COSC 439 Operating Systems"). If null or empty, generates
+     *                      generic study materials.
+     * @return JSON string containing flashcards and questions
+     * @throws Exception if Gemini API call fails
+     */
+    public String generateQuestions(String slideText, String courseContext) throws Exception {
 
         // Prevent gigantic prompts from overwhelming Gemini
         final int MAX_INPUT_CHARS = 120000;
@@ -37,10 +47,10 @@ public class GeminiService {
             slideText = slideText.substring(0, MAX_INPUT_CHARS);
         }
 
-        String prompt = """
-            You are building a study package for a cumulative Operating Systems final
-            (COSC 439, Chapters 1-14). The exam rewards two very different skills, so you
-            must generate two distinct kinds of content instead of generic definitional recall.
+        // Build course-aware prompt preamble
+        String courseContextPrompt = buildCourseContextPrompt(courseContext);
+
+        String prompt = courseContextPrompt + """
 
             From the SLIDE TEXT below, return JSON with two parts: "flashcards" and "questions".
 
@@ -60,38 +70,22 @@ public class GeminiService {
             "concept" or "calculation". Do not blur the two.
 
             --- CONCEPT questions ---
-            These test mechanism and trade-off, not just definitions. A good concept
-            question forces the student to explain WHAT the OS does, WHY it does it that
-            way, and WHAT the cost/trade-off is (performance, security, complexity).
-            Prioritize contrast pairs explicitly named in the course material, e.g.:
-            process vs thread, kernel vs shell, logical vs physical address, blocking vs
-            asynchronous I/O, protection vs security, mutex vs semaphore, ACL vs capability
-            list, symmetric vs asymmetric encryption.
-            Weight concept questions toward FINAL-WEEK material (Ch 12 I/O Systems,
-            Ch 13 Protection, Ch 14 Security) since it is the least-drilled material:
-            least privilege, access matrices, ACLs, capability lists, revocation,
-            common attacks (masquerading, replay, man-in-the-middle, session hijacking,
-            buffer overflow, worms, port scans, DoS), authentication, hashes, MACs,
-            digital signatures, certificates, firewalls, defense in depth.
-            At least 40%% of concept questions must come from Ch 12-14.
+            These test mechanism, trade-offs, and deep understanding, not just definitions.
+            A good concept question forces the student to explain WHAT happens, WHY it happens
+            that way, and WHAT the cost/trade-off is (performance, security, complexity,
+            usability, maintainability). Prioritize contrast pairs and relationships found
+            in the course material.
+            Weight concept questions toward material that is more conceptually challenging
+            and less drilled through repetition.
 
             --- CALCULATION questions ---
             These must be genuine numeric/worked problems, not vocabulary. Generate
-            calculation questions covering these exact categories whenever the slide
-            content supports it:
-              - CPU scheduling Gantt charts (FCFS, SJF, SRTF, Priority, Round Robin) —
-                give a specific process/burst-time table and ask for waiting time,
-                turnaround time, or completion order.
-              - Address translation: physical address = logical address + relocation/MMU value.
-              - Demand paging effective access time, given memory access time and
-                page-fault rate.
-              - Page replacement fault counts (FIFO, LRU, second-chance) given a
-                reference string.
-              - Disk scheduling total head movement (FCFS, SSTF, SCAN, C-SCAN, LOOK, C-LOOK)
-                given a starting head position and request queue.
-              - Disk I/O average access time = seek time + rotational latency + transfer
-                time + controller overhead.
-              - Unix/Linux permission conversion: octal value to owner/group/others rwx.
+            calculation questions covering these categories whenever the slide content supports:
+              - Quantitative computations (formulas, math problems)
+              - Step-by-step procedures requiring numerical outputs
+              - Data conversions (binary, decimal, hexadecimal, etc.)
+              - Performance calculations and analysis
+              - Any domain-specific numeric problem-solving
             For calculation questions, the "explanation" field must show the actual
             worked steps (the numbers plugged in, not just the final answer), so a
             student who gets it wrong can see exactly where their math diverged.
@@ -250,6 +244,75 @@ public class GeminiService {
         }
 
         return textNode.asText();
+    }
+
+    /**
+     * Backward-compatible overload for course-specific generation (e.g., COSC 439).
+     *
+     * @param slideText the content from course slides
+     * @return JSON string containing flashcards and questions
+     * @throws Exception if Gemini API call fails
+     */
+    public String generateQuestions(String slideText) throws Exception {
+        // Default to course-agnostic generation
+        return generateQuestions(slideText, null);
+    }
+
+    /**
+     * Builds a course-context-aware prompt preamble.
+     * If courseContext is provided, customizes the prompt for that course.
+     * Otherwise, generates a generic prompt.
+     *
+     * @param courseContext course description or null/empty for generic mode
+     * @return prompt preamble string
+     */
+    private String buildCourseContextPrompt(String courseContext) {
+        if (courseContext == null || courseContext.isBlank()) {
+            return "You are building a comprehensive study package for the given course material. "
+                    + "Generate study materials that test both conceptual understanding and practical application.";
+        }
+
+        // For well-known courses, provide specialized guidance
+        if (courseContext.toLowerCase().contains("operating system")
+                || courseContext.toLowerCase().contains("cosc 439")
+                || courseContext.toLowerCase().contains("os")) {
+            return """
+                    You are building a study package for a course on Operating Systems.
+                    The course emphasizes both theoretical concepts and practical system design.
+                    Pay special attention to:
+                    - Process/thread management and synchronization
+                    - Memory management (paging, segmentation, virtual memory)
+                    - I/O systems and disk scheduling
+                    - File systems and protection/security mechanisms
+                    - Trade-offs between performance, security, and complexity""";
+        }
+
+        if (courseContext.toLowerCase().contains("algorithm")
+                || courseContext.toLowerCase().contains("data structure")) {
+            return """
+                    You are building a study package for a course on Algorithms and Data Structures.
+                    The course emphasizes both algorithmic thinking and implementation.
+                    Pay special attention to:
+                    - Time and space complexity analysis (Big O notation)
+                    - Algorithm design paradigms (greedy, divide-and-conquer, dynamic programming)
+                    - Data structure properties and trade-offs
+                    - Practical implementation and edge cases""";
+        }
+
+        if (courseContext.toLowerCase().contains("database")) {
+            return """
+                    You are building a study package for a course on Databases.
+                    The course emphasizes both relational theory and practical database design.
+                    Pay special attention to:
+                    - Relational model and normalization
+                    - SQL and query optimization
+                    - Transaction management and concurrency control
+                    - Indexing and performance tuning""";
+        }
+
+        // Generic fallback with course name
+        return "You are building a comprehensive study package for " + courseContext.trim() + ". "
+                + "Generate study materials that test both conceptual understanding and practical application.";
     }
 
     private HttpResponse<String> callGeminiWithRetries(
