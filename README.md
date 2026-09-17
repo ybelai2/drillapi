@@ -1,183 +1,72 @@
-# Drill — Study Materials Generator
+# Drill API
 
-Drill is a full-stack web application that transforms PowerPoint lecture slides into interactive study materials (flashcards, multiple-choice questions) using AI. Built to explore practical multi-file processing workflows and API integration with large language models.
+Spring Boot / Java 21 backend for Drill's study workspace. The companion UI is [os439-frontend](https://github.com/ybelai2/os439-frontend).
 
-**Live demo:** (https://study-cs.vercel.app/))
+## What is implemented
 
----
+- Email/password signup, login, current user, and logout. BCrypt password hashes; random seven-day bearer sessions with only SHA-256 token hashes stored in PostgreSQL.
+- Private courses with codes, semesters, and descriptions; classes/lectures with notes and studied status; saved question/flashcard decks.
+- Create, read, update, and delete endpoints at every level. Every nested request verifies the signed-in owner. Deleting a parent cascades to its children.
+- PowerPoint parsing and Gemini study generation with course context; generated decks are saved under a class. Original PowerPoint binaries are **not** retained.
+- Flyway schema migrations, request validation, an explicit CORS allowlist, upload limits, and per-instance throttling (30 auth requests/IP/minute, 10 generations/account/hour).
 
-## Architecture
+## Local development
 
-**Backend:** Spring Boot REST API (Java) on Render  
-**Frontend:** React + TypeScript + Vite on Vercel  
-**AI Engine:** Google Gemini API  
+Requires Java 21 and Docker (for PostgreSQL):
 
-```
-User → React UI → Spring Boot API → Gemini API → SQLite → JSON Response
-                     ↑
-              Multi-file upload
-              PowerPoint parsing
-              Prompt engineering
-```
-
----
-
-## Key Features
-
-- **PowerPoint Upload**: Drag-and-drop multi-file uploads with Apache POI for file parsing
-- **AI-Driven Questions**: Prompts Gemini API to generate context-aware flashcards and quiz questions
-- **Flexible Question Types**: Multiple-choice and open-ended questions with answer explanations
-- **Persistent Storage**: SQLite database tracks uploaded materials and generated questions
-- **CORS-Enabled API**: Designed for cross-origin requests from frontend consumers
-
----
-
-## Technical Decisions
-
-### Spring Boot 4.1.0
-Chose Spring Boot for its mature ecosystem and built-in MVC patterns. This was my first production Spring project, so robustness mattered over experimentation. The framework's dependency injection and auto-configuration saved time during the multi-file upload iteration.
-
-### Apache POI for PowerPoint Parsing
-PowerPoint files (.pptx) are ZIP archives containing XML. Using POI abstracted away that complexity and let me focus on question generation logic rather than file format parsing.
-
-### Gemini API (not OpenAI)
-Wanted to explore Google's model and reduce vendor lock-in. Gemini's pricing and prompt engineering constraints (token limits, response format) taught me how to write prompts that reliably produce structured JSON even with API cost sensitivity.
-
-### SQLite for Local Storage
-Kept deployment simple—no external database to manage on Render's free tier. SQLite is sufficient for demonstrating data persistence; production would require PostgreSQL.
-
-### Render + Vercel Deployment
-Two-tier deployment reduces coupling between frontend and backend builds. Render's free tier has limitations (sleeps if inactive), which is fine for a portfolio project but shows understanding of production constraints.
-
----
-
-## Setup & Deployment
-
-### Local Development
-
-```bash
-# Backend
-git clone https://github.com/ybelai2/drillapi.git
-cd drillapi
-export GEMINI_API_KEY=your_key_here
-mvn spring-boot:run
-
-# Frontend (separate repo)
-git clone https://github.com/ybelai2/os439-frontend.git
-npm install
-npm run dev
+```sh
+docker compose up -d
+export GEMINI_API_KEY=your_key
+bash mvnw spring-boot:run
 ```
 
-### Environment Variables
+The API defaults to `http://localhost:8080` with the development database from `compose.yaml`. Signup and CRUD do not require a Gemini key. Copy the values in `.env.example` into your shell or hosting environment; Spring does not automatically load a `.env` file.
 
-```
-GEMINI_API_KEY        # Google Gemini API key (https://ai.google.dev)
-SERVER_PORT           # Default: 8080
-SQLITE_DB_PATH        # Default: ./data/drill.db
+```sh
+bash mvnw verify
 ```
 
-### Production Deployment
+Tests run migrations against H2 in PostgreSQL compatibility mode and exercise authentication, token expiry/revocation, CRUD, cascade deletion, validation, CORS, and cross-account denial. CI uses Java 21. H2 tests do not replace a deployment smoke test against PostgreSQL.
 
-**Backend on Render:**
-- Connected to GitHub repo with automatic deploys on push
-- Uses Dockerfile for containerization
-- Cold start issue: Free tier dyno sleeps after 15 min inactivity
+## Configuration / deployment
 
-**Frontend on Vercel:**
-- Automatic deployments on main branch push
-- Environment variable: `VITE_API_URL` points to Render backend
+| Variable | Meaning |
+|---|---|
+| `DATABASE_URL` | JDBC URL, e.g. `jdbc:postgresql://host:5432/database?sslmode=require` |
+| `DATABASE_USERNAME` / `DATABASE_PASSWORD` | PostgreSQL credentials |
+| `GEMINI_API_KEY` | Gemini API key, required only for generation |
+| `GEMINI_MODEL` | Defaults to `gemini-2.5-flash` |
+| `ALLOWED_ORIGINS` | Comma-separated exact frontend origins (no trailing slash) |
+| `PORT` | Defaults to 8080 |
 
----
+On Render, set the database credentials and the frontend origin. A `postgresql://user:password@host/database` URL must be converted to a `jdbc:postgresql://host/database` URL with credentials in the separate variables. Use a durable managed PostgreSQL database and HTTPS in production. Do not use the local demo credentials in production.
 
-## API Endpoints
+Flyway applies `V1__study_library.sql` on first startup and Hibernate validates it. Back up an existing database before rollout. If the target schema already contains unrelated tables and no Flyway history, use a new empty schema/database or reconcile migrations deliberately; do not automatically baseline an unknown schema.
 
-### POST `/api/materials/upload`
-Accepts multipart file upload (PowerPoint files)
-```bash
-curl -X POST http://localhost:8080/api/materials/upload \
-  -F "files=@lecture1.pptx" \
-  -F "files=@lecture2.pptx"
-```
+Coordinate rollout with the frontend branch: protected upload endpoints now require authentication, so an older UI cannot generate decks. Configure `VITE_API_URL` on Vercel to point to this backend and redeploy the frontend. `/ping` remains public for health checks.
 
-**Response:**
-```json
-{
-  "materialId": "abc123",
-  "fileName": "lecture1.pptx",
-  "status": "processing",
-  "uploadedAt": "2024-07-22T10:30:00Z"
-}
-```
+## API
 
-### GET `/api/materials/{materialId}/questions`
-Fetch generated questions for a material
+Public: `POST /api/auth/signup` (`name`, `email`, `password`, minimum 12 characters), `POST /api/auth/login` (`email`, `password`). Both return `{token, expiresAt, user}`.
 
-**Response:**
-```json
-{
-  "questions": [
-    {
-      "id": "q1",
-      "type": "multiple-choice",
-      "text": "What is the primary purpose of virtual memory?",
-      "options": ["A", "B", "C", "D"],
-      "correctAnswer": "B",
-      "explanation": "..."
-    }
-  ],
-  "generatedAt": "2024-07-22T10:35:00Z"
-}
-```
+Send `Authorization: Bearer <token>` on all other requests:
 
----
+| Path | Methods |
+|---|---|
+| `/api/auth/me` | GET |
+| `/api/auth/logout` | POST |
+| `/api/courses` | GET, POST |
+| `/api/courses/{courseId}` | GET, PUT, DELETE |
+| `/api/courses/{courseId}/classes` | GET, POST |
+| `/api/courses/{courseId}/classes/{classId}` | GET, PUT, DELETE |
+| `/api/courses/{courseId}/classes/{classId}/decks` | GET, POST |
+| `/api/courses/{courseId}/classes/{classId}/decks/{deckId}` | GET, PUT, DELETE |
+| `/api/courses/{courseId}/classes/{classId}/generate` | POST multipart `title`, `files` |
+| `/api/extract` | POST multipart `files` |
+| `/api/generate` | POST multipart `files` (legacy response, not saved) |
 
-## Known Limitations & Trade-offs
+Course write body: `{title, code, semester, description}`. Class: `{title, notes, studied}`. Deck: `{title, content}` where `content` is a JSON string containing `flashcards` and `questions`. Updates use full PUT bodies. IDs belong to the authenticated account; foreign IDs return 404.
 
-1. **Synchronous Processing**: Large PowerPoint files block the upload endpoint. Production should use async job queues (SQS).
-2. **Gemini API Cost**: Each upload makes multiple API calls. No rate limiting implemented; production needs throttling.
-3. **No Authentication**: Anyone can upload/download. Multipart form validation exists but no user auth layer.
-4. **SQLite Scalability**: Good for <10K uploaded files. Would switch to PostgreSQL for production scale.
-5. **Prompt Engineering**: Gemini doesn't always return valid JSON; added retry logic but it's brittle.
+## Current boundaries
 
----
-
-## What I Learned
-
-- **Real-world file parsing**: Zip archives, XML, binary data aren't abstractions anymore
-- **API integration complexity**: Structuring prompts for reliable JSON output, handling model limitations
-- **Full-stack iteration**: Debugging CORS issues, managing state across three layers (frontend, API, AI)
-- **Deployment friction**: Cold starts, environment variable management, containerization basics
-- **Trade-off thinking**: When to use free tiers (Render) vs when they become limitations
-
----
-
-## Future Improvements
-
-- [ ] Async processing with job queue (Redis + background workers)
-- [ ] User authentication and material ownership tracking
-- [ ] Gemini multimodal: Extract and analyze images from slides
-- [ ] Question difficulty scoring (based on Bloom's taxonomy)
-- [ ] Rate limiting and quota management per user
-- [ ] Export to Anki deck format
-
----
-
-## Running Tests
-
-```bash
-mvn test
-```
-
-Current test coverage: file upload validation, Gemini prompt structure, API response parsing.
-
----
-
-## License
-
-MIT
-
----
-
-## Questions?
-
-Open an issue on GitHub or reach out: [yohannesbelai4@gmail.com]
+Email verification, password reset, persisted test scores, asynchronous generation, and original upload storage are not implemented. Study materials and class studied status persist; per-question practice progress does not. Sessions survive server restarts and expire after seven days; the UI stores the token in sessionStorage, so closing the tab normally requires signing in again. Add shared rate limiting for multiple replicas and scheduled cleanup of expired session rows as traffic grows. Generation is synchronous and can take several minutes.

@@ -95,6 +95,7 @@ public class GeminiService {
             ============================================================
             - Generate enough questions to test mastery of all material.
             - Minimum 25 questions. For large slide decks generate 40-75 questions.
+            - The type field MUST be exactly "mc", "tf", or "fill".
             - Across ALL questions, mix format types:
                 40%% Multiple Choice
                 30%% True/False
@@ -275,7 +276,7 @@ public class GeminiService {
         // For well-known courses, provide specialized guidance
         if (courseContext.toLowerCase().contains("operating system")
                 || courseContext.toLowerCase().contains("cosc 439")
-                || courseContext.toLowerCase().contains("os")) {
+               ) {
             return """
                     You are building a study package for a course on Operating Systems.
                     The course emphasizes both theoretical concepts and practical system design.
